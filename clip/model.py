@@ -350,6 +350,20 @@ class CLIP(nn.Module):
 
         return x
 
+    def encode_text_embedding(self, x, lens):
+        # lens: lengths of sequences
+        x = x + self.positional_embedding.type(self.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.ln_final(x).type(self.dtype)
+
+        # x.shape = [batch_size, n_ctx, transformer.width]
+        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        x = x[torch.arange(x.shape[0]), lens + 1] @ self.text_projection
+
+        return x
+
     def forward(self, image, text):
         image_features = self.encode_image(image)
         text_features = self.encode_text(text)

@@ -117,7 +117,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # create model
     print("=> creating model")
-    model = torch.jit.load('ViT-B-32.pt')
+    model, preprocess = clip.load('RN50x4.pt', device='cpu', jit=False)
 
     if not torch.cuda.is_available():
         print('using CPU, this will be slow')
@@ -148,28 +148,22 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # encode labels
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    with open('imagenet-simple-labels.json') as f:
+    with open('labels/imagenet-simple-labels.json') as f:
         labels = json.load(f)
     labels = ['a picture of a {}.'.format(l) for l in labels]
 
     text = clip.tokenize(labels).to(device)
-    text_features = get_model(model).encode_text(text)
-    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+    with torch.no_grad():
+        text_features = get_model(model).encode_text(text)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
     cudnn.benchmark = True
 
     # Data loading code
     valdir = os.path.join(args.data, 'val')
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256, interpolation=Image.BICUBIC),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])),
+        datasets.ImageFolder(valdir, preprocess),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
@@ -186,12 +180,7 @@ def main_worker(gpu, ngpus_per_node, args):
         for s in range(1, 6):
             valdir = os.path.join(args.data, 'corruptions', c, str(s))
             val_loader = torch.utils.data.DataLoader(
-                datasets.ImageFolder(valdir, transforms.Compose([
-                    transforms.Resize(256),
-                    transforms.CenterCrop(224),
-                    transforms.ToTensor(),
-                    normalize,
-                ])),
+                datasets.ImageFolder(valdir, preprocess),
                 batch_size=args.batch_size, shuffle=False,
                 num_workers=args.workers, pin_memory=True)
 
